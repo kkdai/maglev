@@ -42,10 +42,20 @@ func TestDistribution(t *testing.T) {
 
 	mm := NewMaglev(names, lookupSizeM)
 	log.Println("kk1:", mm.permutation[0])
-	log.Println("pp1:", mm.populate())
-	log.Println("pp2:", mm.populate())
+	mm.populate()
+	log.Println("pp1:", mm.lookup)
+	mm.populate()
+	log.Println("pp2:", mm.lookup)
 	log.Println("node1:", mm.Get("IP1"))
 	log.Println("node2:", mm.Get("IP2"))
 	log.Println("node3:", mm.Get("IPasdasdwni2"))
+	if err := mm.Remove("backend-0"); err != nil {
+		t.Error("Remove failed", err)
+	}
+	log.Println("node3-D:", mm.Get("IPasdasdwni2"))
 
+	if err := mm.Remove("backend-1"); err != nil {
+		t.Error("Remove failed", err)
+	}
+	log.Println("node2-D:", mm.Get("IP2"))
 }
