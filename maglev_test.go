@@ -33,8 +33,6 @@ const sizeN = 5
 const lookupSizeM = 13 //need prime and
 
 func TestDistribution(t *testing.T) {
-	// const size = 10
-
 	var names []string
 	for i := 0; i < sizeN; i++ {
 		names = append(names, fmt.Sprintf("backend-%d", i))
@@ -46,16 +44,29 @@ func TestDistribution(t *testing.T) {
 	log.Println("pp1:", mm.lookup)
 	mm.populate()
 	log.Println("pp2:", mm.lookup)
-	log.Println("node1:", mm.Get("IP1"))
-	log.Println("node2:", mm.Get("IP2"))
-	log.Println("node3:", mm.Get("IPasdasdwni2"))
+	v, err := mm.Get("IP1")
+	log.Println("node1:", v)
+	v, _ = mm.Get("IP2")
+	log.Println("node2:", v)
+	v, _ = mm.Get("IPasdasdwni2")
+	log.Println("node3:", v)
 	if err := mm.Remove("backend-0"); err != nil {
 		t.Error("Remove failed", err)
 	}
-	log.Println("node3-D:", mm.Get("IPasdasdwni2"))
+	v, _ = mm.Get("IPasdasdwni2")
+	log.Println("node3-D:", v)
 
 	if err := mm.Remove("backend-1"); err != nil {
 		t.Error("Remove failed", err)
 	}
-	log.Println("node2-D:", mm.Get("IP2"))
+	v, _ = mm.Get("IP2")
+	log.Println("node2-D:", v)
+
+	mm.Remove("backend-2")
+	mm.Remove("backend-3")
+	mm.Remove("backend-4")
+
+	if _, err = mm.Get("IP1"); err == nil {
+		t.Error("Empty handle error")
+	}
 }

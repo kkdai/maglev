@@ -37,6 +37,7 @@ func (m *Maglev) Add(backend string) error {
 	}
 
 	m.nodeList = append(m.nodeList, backend)
+	m.n = uint64(len(m.nodeList))
 	m.generatePopulation()
 	m.populate()
 	return nil
@@ -61,15 +62,19 @@ func (m *Maglev) Remove(backend string) error {
 		}
 	}
 
+	m.n = uint64(len(m.nodeList))
 	m.generatePopulation()
 	m.populate()
 	return nil
 }
 
 //Get :Get node name by object string.
-func (m *Maglev) Get(obj string) string {
+func (m *Maglev) Get(obj string) (string, error) {
+	if len(m.nodeList) == 0 {
+		return "", errors.New("Empty")
+	}
 	key := m.hashKey(obj)
-	return m.nodeList[m.lookup[key%m.m]]
+	return m.nodeList[m.lookup[key%m.m]], nil
 }
 
 func (m *Maglev) hashKey(obj string) uint64 {
@@ -77,6 +82,10 @@ func (m *Maglev) hashKey(obj string) uint64 {
 }
 
 func (m *Maglev) generatePopulation() {
+	if len(m.nodeList) == 0 {
+		return
+	}
+
 	for i := 0; i < len(m.nodeList); i++ {
 		bData := []byte(m.nodeList[i])
 
@@ -94,6 +103,10 @@ func (m *Maglev) generatePopulation() {
 }
 
 func (m *Maglev) populate() {
+	if len(m.nodeList) == 0 {
+		return
+	}
+
 	var i, j uint64
 	next := make([]uint64, m.n)
 	entry := make([]int64, m.m)
