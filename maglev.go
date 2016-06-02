@@ -1,6 +1,10 @@
 package maglev
 
-import "github.com/dchest/siphash"
+import (
+	"errors"
+
+	"github.com/dchest/siphash"
+)
 
 const (
 	bigM uint64 = 65537
@@ -8,7 +12,7 @@ const (
 
 //Maglev :
 type Maglev struct {
-	n           uint64 //size of VIP backeds
+	n           uint64 //size of VIP backends
 	m           uint64 //sie of the lookup table
 	permutation [][]uint64
 	lookup      []int64
@@ -18,13 +22,51 @@ type Maglev struct {
 //NewMaglev :
 func NewMaglev(backends []string, m uint64) *Maglev {
 	mag := &Maglev{n: uint64(len(backends)), m: m}
-	mag.generatePopulation(backends)
-	mag.lookup = mag.populate()
 	mag.nodeList = backends
+	mag.generatePopulation()
+	mag.populate()
 	return mag
 }
 
-//Get :Get node name
+//Add : Return nil if add success, otherwise return error
+func (m *Maglev) Add(backend string) error {
+	for _, v := range m.nodeList {
+		if v == backend {
+			return errors.New("Exist already")
+		}
+	}
+
+	m.nodeList = append(m.nodeList, backend)
+	m.generatePopulation()
+	m.populate()
+	return nil
+}
+
+//Remove :
+func (m *Maglev) Remove(backend string) error {
+	notFound := true
+	for _, v := range m.nodeList {
+		if v == backend {
+			notFound = false
+		}
+	}
+	if notFound {
+		return errors.New("Not found")
+	}
+
+	for i, v := range m.nodeList {
+		if v == backend {
+			m.nodeList = append(m.nodeList[:i], m.nodeList[i+1:]...)
+			break
+		}
+	}
+
+	m.generatePopulation()
+	m.populate()
+	return nil
+}
+
+//Get :Get node name by object string.
 func (m *Maglev) Get(obj string) string {
 	key := m.hashKey(obj)
 	return m.nodeList[m.lookup[key%m.m]]
@@ -34,9 +76,9 @@ func (m *Maglev) hashKey(obj string) uint64 {
 	return siphash.Hash(0xdeadbabe, 0, []byte(obj))
 }
 
-func (m *Maglev) generatePopulation(backeds []string) {
-	for i := 0; i < len(backeds); i++ {
-		bData := []byte(backeds[i])
+func (m *Maglev) generatePopulation() {
+	for i := 0; i < len(m.nodeList); i++ {
+		bData := []byte(m.nodeList[i])
 
 		offset := siphash.Hash(0xdeadbabe, 0, bData) % m.m
 		skip := (siphash.Hash(0xdeadbeef, 0, bData) % (m.m - 1)) + 1
@@ -51,8 +93,7 @@ func (m *Maglev) generatePopulation(backeds []string) {
 	}
 }
 
-//Populate :
-func (m *Maglev) populate() []int64 {
+func (m *Maglev) populate() {
 	var i, j uint64
 	next := make([]uint64, m.n)
 	entry := make([]int64, m.m)
@@ -75,7 +116,8 @@ func (m *Maglev) populate() []int64 {
 			n++
 
 			if n == m.m {
-				return entry
+				m.lookup = entry
+				return
 			}
 		}
 
