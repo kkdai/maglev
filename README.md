@@ -4,6 +4,8 @@ Maglev: A Google Maglev Hashing Algorithm implement in Golang
 [![GoDoc](https://godoc.org/github.com/kkdai/maglev?status.svg)](https://godoc.org/github.com/kkdai/maglev)  [![Build Status](https://travis-ci.org/kkdai/maglev.svg?branch=master)](https://travis-ci.org/kkdai/maglev) [![](https://goreportcard.com/badge/github.com/kkdai/maglev)](https://goreportcard.com/badge/github.com/kkdai/maglev)
 
 
+![](http://www.evanlin.com/images/2016/maglev1.png)
+
 
 What is Maglev
 =============
