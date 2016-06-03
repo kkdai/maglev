@@ -19,6 +19,7 @@ adding or removing servers.
 (cite from [paper](http://static.googleusercontent.com/media/research.google.com/zh-TW//pubs/archive/44824.pdf))
 
 
+### Here is a Chinese reading note about Maglev: [[論文中文導讀] Maglev : A Fast and Reliable Software Network Load Balancer (using Consistent Hashing)](http://www.evanlin.com/maglev/)
 
 Installation and Usage
 =============
