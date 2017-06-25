@@ -85,4 +85,4 @@ It is one of my [project 52](https://github.com/kkdai/project52).
 License
 ---------------
 
-etcd is under the Apache 2.0 [license](LICENSE). See the LICENSE file for details.
+This is under the Apache 2.0 [license](LICENSE). See the LICENSE file for details.
