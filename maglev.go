@@ -36,6 +36,10 @@ func (m *Maglev) Add(backend string) error {
 		}
 	}
 
+	if m.m == m.n {
+		return errors.New("Number of backends would be greater than lookup table")
+	}
+
 	m.nodeList = append(m.nodeList, backend)
 	m.n = uint64(len(m.nodeList))
 	m.generatePopulation()
