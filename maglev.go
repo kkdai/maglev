@@ -22,12 +22,12 @@ type Maglev struct {
 }
 
 //NewMaglev :
-func NewMaglev(backends []string, m uint64) *Maglev {
-	mag := &Maglev{n: uint64(len(backends)), m: m}
-	mag.nodeList = backends
-	mag.generatePopulation()
-	mag.populate()
-	return mag
+func NewMaglev(backends []string, m uint64) (*Maglev, error) {
+	mag := &Maglev{m: m, lock: &sync.RWMutex{}}
+	if err := mag.Set(backends); err != nil {
+		return nil, err
+	}
+	return mag, nil
 }
 
 //Add : Return nil if add success, otherwise return error
@@ -78,6 +78,31 @@ func (m *Maglev) Remove(backend string) error {
 	m.generatePopulation()
 	m.populate()
 	return nil
+}
+
+func (m *Maglev) Set(backends []string) error {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	n := uint64(len(backends))
+	if m.m < n {
+		return errors.New("Number of backends is greater than lookup table")
+	}
+	m.nodeList = make([]string, n)
+	copy(m.nodeList, backends) // Copy to avoid modifying orinal input afterwards
+	m.n = n
+	m.generatePopulation()
+	m.populate()
+	return nil
+}
+
+func (m *Maglev) Clear() {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	m.nodeList = nil
+	m.permutation = nil
+	m.lookup = nil
 }
 
 //Get :Get node name by object string.
