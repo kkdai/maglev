@@ -149,6 +149,39 @@ func TestSetAddRemove(t *testing.T) {
 	}
 }
 
+func TestDistributionCoherency(t *testing.T) {
+	var names1 []string
+	var names2 []string
+	for i := 0; i < sizeN; i++ {
+		names1 = append(names1, fmt.Sprintf("backend-%d", i))
+	}
+	// Create names in reverse order, result of distribution should be the same
+	for i := sizeN - 1; i >= 0; i-- {
+		names2 = append(names2, names1[i])
+	}
+	mm1, err := NewMaglev(names1, lookupSizeM)
+	if err != nil {
+		t.Error("Creation failed", err)
+	}
+	mm2, err := NewMaglev(names1, lookupSizeM)
+	if err != nil {
+		t.Error("Creation failed", err)
+	}
+
+	var lookUpNames []string
+	for i := 0; i < 1024; i++ {
+		lookUpNames = append(lookUpNames, fmt.Sprintf("IP%d", i))
+	}
+
+	for _, lookupName := range lookUpNames {
+		name1, _ := mm1.Get(lookupName)
+		name2, _ := mm2.Get(lookupName)
+		if name1 != name2 {
+			t.Errorf("Backend %s != %s", name1, name2)
+		}
+	}
+}
+
 func TestRemovedBackend(t *testing.T) {
 	var names []string
 	for i := 0; i < sizeN; i++ {
