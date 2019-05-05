@@ -126,6 +126,7 @@ func (m *Maglev) hashKey(obj string) uint64 {
 }
 
 func (m *Maglev) generatePopulation() {
+	m.permutation = nil
 	if len(m.nodeList) == 0 {
 		return
 	}
