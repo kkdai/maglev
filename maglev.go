@@ -2,6 +2,7 @@ package maglev
 
 import (
 	"errors"
+	"sync"
 
 	"github.com/dchest/siphash"
 )
@@ -17,6 +18,7 @@ type Maglev struct {
 	permutation [][]uint64
 	lookup      []int64
 	nodeList    []string
+	lock        *sync.RWMutex
 }
 
 //NewMaglev :
@@ -30,6 +32,9 @@ func NewMaglev(backends []string, m uint64) *Maglev {
 
 //Add : Return nil if add success, otherwise return error
 func (m *Maglev) Add(backend string) error {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
 	for _, v := range m.nodeList {
 		if v == backend {
 			return errors.New("Exist already")
@@ -49,6 +54,9 @@ func (m *Maglev) Add(backend string) error {
 
 //Remove :
 func (m *Maglev) Remove(backend string) error {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
 	notFound := true
 	for _, v := range m.nodeList {
 		if v == backend {
@@ -74,6 +82,9 @@ func (m *Maglev) Remove(backend string) error {
 
 //Get :Get node name by object string.
 func (m *Maglev) Get(obj string) (string, error) {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+
 	if len(m.nodeList) == 0 {
 		return "", errors.New("Empty")
 	}
