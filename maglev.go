@@ -62,22 +62,12 @@ func (m *Maglev) Remove(backend string) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	notFound := true
-	for _, v := range m.nodeList {
-		if v == backend {
-			notFound = false
-		}
-	}
-	if notFound {
+	index := sort.SearchStrings(m.nodeList, backend)
+	if index == len(m.nodeList) {
 		return errors.New("Not found")
 	}
 
-	for i, v := range m.nodeList {
-		if v == backend {
-			m.nodeList = append(m.nodeList[:i], m.nodeList[i+1:]...)
-			break
-		}
-	}
+	m.nodeList = append(m.nodeList[:index], m.nodeList[index+1:]...)
 
 	m.n = uint64(len(m.nodeList))
 	m.generatePopulation()
