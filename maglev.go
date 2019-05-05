@@ -2,6 +2,7 @@ package maglev
 
 import (
 	"errors"
+	"math/big"
 	"sync"
 
 	"github.com/dchest/siphash"
@@ -23,6 +24,9 @@ type Maglev struct {
 
 //NewMaglev :
 func NewMaglev(backends []string, m uint64) (*Maglev, error) {
+	if !big.NewInt(0).SetUint64(m).ProbablyPrime(1) {
+		return nil, errors.New("Lookup table size is not a prime number")
+	}
 	mag := &Maglev{m: m, lock: &sync.RWMutex{}}
 	if err := mag.Set(backends); err != nil {
 		return nil, err
