@@ -3,6 +3,7 @@ package maglev
 import (
 	"errors"
 	"math/big"
+	"sort"
 	"sync"
 
 	"github.com/dchest/siphash"
@@ -130,6 +131,8 @@ func (m *Maglev) generatePopulation() {
 	if len(m.nodeList) == 0 {
 		return
 	}
+
+	sort.Strings(m.nodeList)
 
 	for i := 0; i < len(m.nodeList); i++ {
 		bData := []byte(m.nodeList[i])
