@@ -33,6 +33,24 @@ import (
 const sizeN = 5
 const lookupSizeM = 13 //need prime and
 
+func TestSimple(t *testing.T) {
+	var names []string
+	for i := 0; i < sizeN; i++ {
+		names = append(names, fmt.Sprintf("backend-%d", i))
+	}
+	mm, err := NewMaglev(names, lookupSizeM)
+	if err != nil {
+		t.Error("Creation failed", err)
+	}
+	v, err := mm.Get("IP1")
+	if err != nil {
+		t.Error("Get failed", err)
+	}
+	if sort.SearchStrings(names, v) == len(names) {
+		t.Errorf("Found node %s is not in original nodes", v)
+	}
+}
+
 func TestDistribution(t *testing.T) {
 	var names []string
 	for i := 0; i < sizeN; i++ {
@@ -101,6 +119,12 @@ func TestSetAddRemove(t *testing.T) {
 	if err != nil {
 		t.Error("Add failed", err)
 	}
+	if len(mm.nodeList) != len(names)+1 {
+		t.Error("Add failed")
+	}
+	if sort.SearchStrings(mm.nodeList, "backend-test") == len(mm.nodeList) {
+		t.Error("Backend was not added")
+	}
 	if (uint64)(len(mm.lookup)) != mm.m {
 		t.Error("lookup size not correct")
 	}
@@ -118,6 +142,12 @@ func TestSetAddRemove(t *testing.T) {
 	err = mm.Remove(names[0])
 	if err != nil {
 		t.Error("Remove failed", err)
+	}
+	if len(mm.nodeList) != len(names)-1 {
+		t.Error("Remove failed")
+	}
+	if sort.SearchStrings(mm.nodeList, "backend-test") != len(mm.nodeList) {
+		t.Error("Backend was not removed")
 	}
 	if (uint64)(len(mm.lookup)) != mm.m {
 		t.Error("lookup size not correct")
