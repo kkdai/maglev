@@ -2,6 +2,9 @@ package maglev
 
 import (
 	"errors"
+	"math/big"
+	"sort"
+	"sync"
 
 	"github.com/dchest/siphash"
 )
@@ -17,23 +20,34 @@ type Maglev struct {
 	permutation [][]uint64
 	lookup      []int64
 	nodeList    []string
+	lock        *sync.RWMutex
 }
 
 //NewMaglev :
-func NewMaglev(backends []string, m uint64) *Maglev {
-	mag := &Maglev{n: uint64(len(backends)), m: m}
-	mag.nodeList = backends
-	mag.generatePopulation()
-	mag.populate()
-	return mag
+func NewMaglev(backends []string, m uint64) (*Maglev, error) {
+	if !big.NewInt(0).SetUint64(m).ProbablyPrime(1) {
+		return nil, errors.New("Lookup table size is not a prime number")
+	}
+	mag := &Maglev{m: m, lock: &sync.RWMutex{}}
+	if err := mag.Set(backends); err != nil {
+		return nil, err
+	}
+	return mag, nil
 }
 
 //Add : Return nil if add success, otherwise return error
 func (m *Maglev) Add(backend string) error {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
 	for _, v := range m.nodeList {
 		if v == backend {
 			return errors.New("Exist already")
 		}
+	}
+
+	if m.m == m.n {
+		return errors.New("Number of backends would be greater than lookup table")
 	}
 
 	m.nodeList = append(m.nodeList, backend)
@@ -45,22 +59,15 @@ func (m *Maglev) Add(backend string) error {
 
 //Remove :
 func (m *Maglev) Remove(backend string) error {
-	notFound := true
-	for _, v := range m.nodeList {
-		if v == backend {
-			notFound = false
-		}
-	}
-	if notFound {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	index := sort.SearchStrings(m.nodeList, backend)
+	if index == len(m.nodeList) {
 		return errors.New("Not found")
 	}
 
-	for i, v := range m.nodeList {
-		if v == backend {
-			m.nodeList = append(m.nodeList[:i], m.nodeList[i+1:]...)
-			break
-		}
-	}
+	m.nodeList = append(m.nodeList[:index], m.nodeList[index+1:]...)
 
 	m.n = uint64(len(m.nodeList))
 	m.generatePopulation()
@@ -68,8 +75,36 @@ func (m *Maglev) Remove(backend string) error {
 	return nil
 }
 
+func (m *Maglev) Set(backends []string) error {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	n := uint64(len(backends))
+	if m.m < n {
+		return errors.New("Number of backends is greater than lookup table")
+	}
+	m.nodeList = make([]string, n)
+	copy(m.nodeList, backends) // Copy to avoid modifying orinal input afterwards
+	m.n = n
+	m.generatePopulation()
+	m.populate()
+	return nil
+}
+
+func (m *Maglev) Clear() {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	m.nodeList = nil
+	m.permutation = nil
+	m.lookup = nil
+}
+
 //Get :Get node name by object string.
 func (m *Maglev) Get(obj string) (string, error) {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+
 	if len(m.nodeList) == 0 {
 		return "", errors.New("Empty")
 	}
@@ -82,9 +117,12 @@ func (m *Maglev) hashKey(obj string) uint64 {
 }
 
 func (m *Maglev) generatePopulation() {
+	m.permutation = nil
 	if len(m.nodeList) == 0 {
 		return
 	}
+
+	sort.Strings(m.nodeList)
 
 	for i := 0; i < len(m.nodeList); i++ {
 		bData := []byte(m.nodeList[i])
