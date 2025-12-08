@@ -33,6 +33,16 @@ import (
 const sizeN = 5
 const lookupSizeM = 13 //need prime and
 
+func TestRequiresPrime(t *testing.T) {
+	var names []string
+	names = append(names, "testing")
+
+	_, err := NewMaglev(names, 4)
+	if err == nil {
+		t.Error("Should disallow prime number")
+	}
+}
+
 func TestSimple(t *testing.T) {
 	var names []string
 	for i := 0; i < sizeN; i++ {
