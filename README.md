@@ -46,9 +46,12 @@ func main() {
 	for i := 0; i < sizeN; i++ {
 		names = append(names, fmt.Sprintf("backend-%d", i))
 	}
-	//backend-0 ~ backend-4 
+	//backend-0 ~ backend-4
 
-	mm := NewMaglev(names, lookupSizeM)
+	mm, err := NewMaglev(names, lookupSizeM)
+	if err != nil {
+		log.Fatal("NewMaglev failed:", err)
+	}
 	v, err := mm.Get("IP1")
 	fmt.Println("node1:", v)
 	//node1: backend-2
