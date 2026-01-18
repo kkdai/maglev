@@ -16,7 +16,7 @@ const (
 //Maglev :
 type Maglev struct {
 	n           uint64 //size of VIP backends
-	m           uint64 //sie of the lookup table
+	m           uint64 //size of the lookup table
 	permutation [][]uint64
 	lookup      []int64
 	nodeList    []string
@@ -40,10 +40,10 @@ func (m *Maglev) Add(backend string) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	for _, v := range m.nodeList {
-		if v == backend {
-			return errors.New("Exist already")
-		}
+	// Use binary search since nodeList is always sorted after generatePopulation
+	index := sort.SearchStrings(m.nodeList, backend)
+	if index < len(m.nodeList) && m.nodeList[index] == backend {
+		return errors.New("Exist already")
 	}
 
 	if m.m == m.n {
@@ -63,7 +63,7 @@ func (m *Maglev) Remove(backend string) error {
 	defer m.lock.Unlock()
 
 	index := sort.SearchStrings(m.nodeList, backend)
-	if index == len(m.nodeList) {
+	if index >= len(m.nodeList) || m.nodeList[index] != backend {
 		return errors.New("Not found")
 	}
 
@@ -84,7 +84,7 @@ func (m *Maglev) Set(backends []string) error {
 		return errors.New("Number of backends is greater than lookup table")
 	}
 	m.nodeList = make([]string, n)
-	copy(m.nodeList, backends) // Copy to avoid modifying orinal input afterwards
+	copy(m.nodeList, backends) // Copy to avoid modifying original input afterwards
 	m.n = n
 	m.generatePopulation()
 	m.populate()
@@ -117,12 +117,15 @@ func (m *Maglev) hashKey(obj string) uint64 {
 }
 
 func (m *Maglev) generatePopulation() {
-	m.permutation = nil
 	if len(m.nodeList) == 0 {
+		m.permutation = nil
 		return
 	}
 
 	sort.Strings(m.nodeList)
+
+	// Pre-allocate permutation slice to avoid repeated memory allocations
+	m.permutation = make([][]uint64, len(m.nodeList))
 
 	for i := 0; i < len(m.nodeList); i++ {
 		bData := []byte(m.nodeList[i])
@@ -136,7 +139,7 @@ func (m *Maglev) generatePopulation() {
 			iRow[j] = (offset + uint64(j)*skip) % m.m
 		}
 
-		m.permutation = append(m.permutation, iRow)
+		m.permutation[i] = iRow
 	}
 }
 
