@@ -157,7 +157,7 @@ func (m *Maglev) populate() {
 
 	var n uint64
 
-	for { //true
+	for n < m.m { //true
 		for i = 0; i < m.n; i++ {
 			c := m.permutation[i][next[i]]
 			for entry[c] >= 0 {
