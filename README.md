@@ -1,25 +1,21 @@
-Maglev: A Google Maglev Hashing Algorithm implement in Golang
+Maglev: The Google Maglev Hashing Algorithm implemented in Golang
 ==============
 
-[![GoDoc](https://godoc.org/github.com/kkdai/maglev?status.svg)](https://godoc.org/github.com/kkdai/maglev)  [![Build Status](https://travis-ci.org/kkdai/maglev.svg?branch=master)](https://travis-ci.org/kkdai/maglev) [![](https://goreportcard.com/badge/github.com/kkdai/maglev)](https://goreportcard.com/badge/github.com/kkdai/maglev) ![Go](https://github.com/kkdai/maglev/workflows/Go/badge.svg)
-
-
-![](http://www.evanlin.com/images/2016/maglev1.png)
-
+[![GoDoc](https://godoc.org/github.com/hardpointlabs/maglev?status.svg)](https://godoc.org/github.com/hardpointlabs/maglev)  [![](https://goreportcard.com/badge/github.com/hardpointlabs/maglev)](https://goreportcard.com/badge/github.com/hardpointlabs/maglev)
 
 What is Maglev
 =============
 
-Maglev is Google’s network load balancer. It is a
-large distributed software system that runs on commodity
-Linux servers. Unlike traditional hardware network load
-balancers, it does not require a specialized physical rack
-deployment, and its capacity can be easily adjusted by
-adding or removing servers. 
-(cite from [paper](http://static.googleusercontent.com/media/research.google.com/zh-TW//pubs/archive/44824.pdf))
+Maglev is [Google's network load balancer](https://research.google/pubs/maglev-a-fast-and-reliable-software-network-load-balancer/). One novelty in its implementation is a new form of consistent hashing with O(1) lookup time. This library implements the lookup table described in the paper for use in generic load balancing applications.
 
+| Operation | Average case | Worst case |
+| :------- | :------: | :-------: |
+| Key Lookup     | O(1) | O(1)    |
+| Lookup table rebuild   | O(M * N)   | O(M * N) |
 
-### Here is a Chinese reading note about Maglev: [[論文中文導讀] Maglev : A Fast and Reliable Software Network Load Balancer (using Consistent Hashing)](http://www.evanlin.com/maglev/)
+(`M` is the size of lookup table, `N` is the number of nodes in the hash ring)
+
+This repo forks the original work from `kkdai/maglev` and uses xxHash in place of SipHash-2-4 for speed and license-friendliness.
 
 Installation and Usage
 =============
@@ -28,7 +24,7 @@ Installation and Usage
 Install
 ---------------
 ```
-go get github.com/kkdai/maglev
+go get github.com/hardpointlabs/maglev
 ```
 
 Usage
@@ -70,20 +66,6 @@ func main() {
 	//node3-D: Change from "backend-0" to "backend-1"
 }
 ```
-
-Inspired By
----------------
-
-- [Wiki Consistent_hashing](https://en.wikipedia.org/wiki/Consistent_hashing)
-- [Go implementation of maglev hashing](https://github.com/dgryski/go-maglev)
-- [每天进步一点点——五分钟理解一致性哈希算法(consistent hashing)](http://blog.csdn.net/cywosp/article/details/23397179)
-- [Distributed Systems Part-1: A peek into consistent hashing!](https://loveforprogramming.quora.com/Distributed-Systems-Part-1-A-peek-into-consistent-hashing)
-
-Project52
----------------
-
-It is one of my [project 52](https://github.com/kkdai/project52).
-
 
 License
 ---------------

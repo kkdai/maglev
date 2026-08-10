@@ -1,5 +1,5 @@
-module github.com/kkdai/maglev
+module github.com/hardpointlabs/maglev
 
 go 1.15
 
-require github.com/dchest/siphash v1.2.2
+require github.com/cespare/xxhash/v2 v2.3.0

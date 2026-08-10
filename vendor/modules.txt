@@ -1,3 +1,0 @@
-# github.com/dchest/siphash v1.2.2
-## explicit
-github.com/dchest/siphash
