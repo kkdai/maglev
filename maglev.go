@@ -1,191 +1,240 @@
+// Package maglev implements Google's Maglev consistent hashing algorithm.
+//
+// A Maglev instance owns a lookup table of M slots (M must be prime) and
+// assigns every slot to one of the N configured backends. Resolving a key is a
+// single hash plus one table read, and adding or removing a backend only
+// reshuffles roughly 1/N of the slots, so existing keys keep landing on the
+// same backend.
+//
+// See the original paper for the details of the algorithm:
+// https://research.google/pubs/pub44824/
 package maglev
 
 import (
 	"errors"
+	"fmt"
 	"math/big"
-	"sort"
+	"slices"
 	"sync"
 
 	"github.com/cespare/xxhash/v2"
 )
 
+// BigM is a convenient prime lookup table size. The paper recommends a table
+// at least ~100x larger than the number of backends so that the slots spread
+// evenly.
+const BigM uint64 = 65537
+
+// Salts for the two independent hashes each backend needs: one picks where its
+// preference list starts, the other how far it steps between preferences.
 const (
-	bigM uint64 = 65537
+	offsetSalt byte = 0xba
+	skipSalt   byte = 0xbe
 )
 
-// Maglev :
+// Errors reported by this package. They are wrapped with context, so test for
+// them with errors.Is rather than comparing error strings.
+var (
+	ErrTableSizeNotPrime = errors.New("maglev: lookup table size is not a prime number")
+	ErrTooManyBackends   = errors.New("maglev: more backends than lookup table slots")
+	ErrBackendExists     = errors.New("maglev: backend already exists")
+	ErrBackendNotFound   = errors.New("maglev: backend not found")
+	ErrNoBackends        = errors.New("maglev: no backends configured")
+)
+
+// Maglev is a consistent hash ring. It is safe for concurrent use.
 type Maglev struct {
-	n           uint64 //size of VIP backends
-	m           uint64 //size of the lookup table
-	permutation [][]uint64
-	lookup      []int64
-	nodeList    []string
-	lock        *sync.RWMutex
+	mu sync.RWMutex // guards every field below
+
+	m           uint64     // number of lookup table slots, always prime
+	nodeList    []string   // backend names, always kept sorted
+	permutation [][]uint64 // permutation[i] is backend i's preference list of slots
+	lookup      []int      // lookup[slot] is the index in nodeList owning that slot
 }
 
-// NewMaglev :
+// NewMaglev returns a Maglev populated with backends and a lookup table of m
+// slots. m must be a prime number and no smaller than len(backends).
 func NewMaglev(backends []string, m uint64) (*Maglev, error) {
 	if !big.NewInt(0).SetUint64(m).ProbablyPrime(1) {
-		return nil, errors.New("lookup table size is not a prime number")
+		return nil, fmt.Errorf("%w: %d", ErrTableSizeNotPrime, m)
 	}
-	mag := &Maglev{m: m, lock: &sync.RWMutex{}}
-	if err := mag.Set(backends); err != nil {
+
+	mg := &Maglev{m: m}
+	if err := mg.Set(backends); err != nil {
 		return nil, err
 	}
-	return mag, nil
+	return mg, nil
 }
 
-// Add : Return nil if add success, otherwise return error
-func (m *Maglev) Add(backend string) error {
-	m.lock.Lock()
-	defer m.lock.Unlock()
+// Set replaces the whole backend list and rebuilds the lookup table.
+func (mg *Maglev) Set(backends []string) error {
+	mg.mu.Lock()
+	defer mg.mu.Unlock()
 
-	// Use binary search since nodeList is always sorted after generatePopulation
-	index := sort.SearchStrings(m.nodeList, backend)
-	if index < len(m.nodeList) && m.nodeList[index] == backend {
-		return errors.New("backend already exists")
+	if uint64(len(backends)) > mg.m {
+		return fmt.Errorf("%w: %d backends, %d slots", ErrTooManyBackends, len(backends), mg.m)
 	}
 
-	if m.m == m.n {
-		return errors.New("number of backends would be greater than lookup table")
-	}
-
-	m.nodeList = append(m.nodeList, backend)
-	m.n = uint64(len(m.nodeList))
-	m.generatePopulation()
-	m.populate()
+	// Clone so that later edits by the caller cannot corrupt the table.
+	mg.nodeList = slices.Clone(backends)
+	mg.rebuild()
 	return nil
 }
 
-// Remove :
-func (m *Maglev) Remove(backend string) error {
-	m.lock.Lock()
-	defer m.lock.Unlock()
+// Add inserts a single backend. It reports ErrBackendExists if the backend is
+// already present.
+func (mg *Maglev) Add(backend string) error {
+	mg.mu.Lock()
+	defer mg.mu.Unlock()
 
-	index := sort.SearchStrings(m.nodeList, backend)
-	if index >= len(m.nodeList) || m.nodeList[index] != backend {
-		return errors.New("backend not found")
+	// nodeList is kept sorted, so a binary search finds both the duplicate and
+	// the insertion point in one step.
+	i, found := slices.BinarySearch(mg.nodeList, backend)
+	if found {
+		return fmt.Errorf("%w: %q", ErrBackendExists, backend)
+	}
+	if uint64(len(mg.nodeList)) >= mg.m {
+		return fmt.Errorf("%w: %d slots", ErrTooManyBackends, mg.m)
 	}
 
-	m.nodeList = append(m.nodeList[:index], m.nodeList[index+1:]...)
-
-	m.n = uint64(len(m.nodeList))
-	m.generatePopulation()
-	m.populate()
+	mg.nodeList = slices.Insert(mg.nodeList, i, backend)
+	mg.rebuild()
 	return nil
 }
 
-func (m *Maglev) Set(backends []string) error {
-	m.lock.Lock()
-	defer m.lock.Unlock()
+// Remove deletes a single backend. It reports ErrBackendNotFound if the
+// backend is unknown.
+func (mg *Maglev) Remove(backend string) error {
+	mg.mu.Lock()
+	defer mg.mu.Unlock()
 
-	n := uint64(len(backends))
-	if m.m < n {
-		return errors.New("number of backends is greater than lookup table")
+	i, found := slices.BinarySearch(mg.nodeList, backend)
+	if !found {
+		return fmt.Errorf("%w: %q", ErrBackendNotFound, backend)
 	}
-	m.nodeList = make([]string, n)
-	copy(m.nodeList, backends) // Copy to avoid modifying original input afterwards
-	m.n = n
-	m.generatePopulation()
-	m.populate()
+
+	mg.nodeList = slices.Delete(mg.nodeList, i, i+1)
+	mg.rebuild()
 	return nil
 }
 
-func (m *Maglev) Clear() {
-	m.lock.Lock()
-	defer m.lock.Unlock()
+// Clear drops every backend. The lookup table size is kept, so the Maglev can
+// be refilled with Set or Add.
+func (mg *Maglev) Clear() {
+	mg.mu.Lock()
+	defer mg.mu.Unlock()
 
-	m.nodeList = nil
-	m.permutation = nil
-	m.lookup = nil
+	mg.nodeList = nil
+	mg.permutation = nil
+	mg.lookup = nil
 }
 
-// Get :Get node name by object string.
-func (m *Maglev) Get(obj string) (string, error) {
-	m.lock.RLock()
-	defer m.lock.RUnlock()
+// Backends returns a copy of the current backend list, in sorted order.
+func (mg *Maglev) Backends() []string {
+	mg.mu.RLock()
+	defer mg.mu.RUnlock()
 
-	if len(m.nodeList) == 0 {
-		return "", errors.New("empty")
+	return slices.Clone(mg.nodeList)
+}
+
+// Get returns the backend that owns obj. It reports ErrNoBackends when no
+// backend is configured.
+func (mg *Maglev) Get(obj string) (string, error) {
+	mg.mu.RLock()
+	defer mg.mu.RUnlock()
+
+	if len(mg.nodeList) == 0 {
+		return "", ErrNoBackends
 	}
-	key := m.hashKey(obj)
-	return m.nodeList[m.lookup[key%m.m]], nil
+
+	slot := hashKey(obj) % mg.m
+	return mg.nodeList[mg.lookup[slot]], nil
 }
 
-func (m *Maglev) hashKey(obj string) uint64 {
-	return xxhash.Sum64([]byte(obj))
+// rebuild recomputes the preference lists and the lookup table from nodeList.
+// The caller must hold mg.mu for writing.
+func (mg *Maglev) rebuild() {
+	// Sorting makes the result depend only on the set of backends, never on
+	// the order they were added in.
+	slices.Sort(mg.nodeList)
+	mg.buildPermutations()
+	mg.buildLookup()
 }
 
-// saltedHash mixes salt into the hash so that offset and skip below are
-// derived from independent hash values, mirroring the two distinct
-// SipHash keys used previously. Reusing a single unsalted hash for both
-// would correlate offset and skip and weaken the permutation.
+// buildPermutations computes each backend's preference list: backend i prefers
+// slot (offset_i + j*skip_i) mod m for j = 0..m-1. Because m is prime and
+// 1 <= skip < m, every row is a full permutation of the table, which
+// guarantees a backend can always walk down its list until it finds a free
+// slot.
+func (mg *Maglev) buildPermutations() {
+	if len(mg.nodeList) == 0 {
+		mg.permutation = nil
+		return
+	}
+
+	mg.permutation = make([][]uint64, len(mg.nodeList))
+	for i, node := range mg.nodeList {
+		name := []byte(node)
+		offset := saltedHash(offsetSalt, name) % mg.m
+		skip := saltedHash(skipSalt, name)%(mg.m-1) + 1
+
+		row := make([]uint64, mg.m)
+		// Stepping instead of computing offset+j*skip keeps the arithmetic
+		// bounded by m, so it cannot overflow for large tables.
+		slot := offset
+		for j := range mg.m {
+			row[j] = slot
+			slot = (slot + skip) % mg.m
+		}
+		mg.permutation[i] = row
+	}
+}
+
+// buildLookup fills the lookup table by letting the backends take turns
+// claiming the most preferred slot they have not lost yet, until every slot is
+// owned. This is the "populate" procedure from the paper.
+func (mg *Maglev) buildLookup() {
+	n := uint64(len(mg.nodeList))
+	if n == 0 {
+		mg.lookup = nil
+		return
+	}
+
+	lookup := make([]int, mg.m)
+	for i := range lookup {
+		lookup[i] = -1 // -1 marks a slot nobody owns yet
+	}
+	next := make([]uint64, n) // next[i]: how far backend i walked down its list
+
+	for filled := uint64(0); ; {
+		for i := range n {
+			slot := mg.permutation[i][next[i]]
+			for lookup[slot] >= 0 { // slot already taken, try the next preference
+				next[i]++
+				slot = mg.permutation[i][next[i]]
+			}
+
+			lookup[slot] = int(i)
+			next[i]++
+			filled++
+			if filled == mg.m {
+				mg.lookup = lookup
+				return
+			}
+		}
+	}
+}
+
+func hashKey(obj string) uint64 {
+	return xxhash.Sum64String(obj)
+}
+
+// saltedHash mixes salt into the hash so that offset and skip are derived from
+// independent hash values. Reusing a single unsalted hash for both would
+// correlate them and weaken the permutation.
 func saltedHash(salt byte, data []byte) uint64 {
 	d := xxhash.New()
 	d.Write([]byte{salt})
 	d.Write(data)
 	return d.Sum64()
-}
-
-func (m *Maglev) generatePopulation() {
-	if len(m.nodeList) == 0 {
-		m.permutation = nil
-		return
-	}
-
-	sort.Strings(m.nodeList)
-
-	// Pre-allocate permutation slice to avoid repeated memory allocations
-	m.permutation = make([][]uint64, len(m.nodeList))
-
-	for i := 0; i < len(m.nodeList); i++ {
-		bData := []byte(m.nodeList[i])
-
-		offset := saltedHash(0xba, bData) % m.m
-		skip := (saltedHash(0xbe, bData) % (m.m - 1)) + 1
-
-		iRow := make([]uint64, m.m)
-		var j uint64
-		for j = 0; j < m.m; j++ {
-			iRow[j] = (offset + uint64(j)*skip) % m.m
-		}
-
-		m.permutation[i] = iRow
-	}
-}
-
-func (m *Maglev) populate() {
-	if len(m.nodeList) == 0 {
-		return
-	}
-
-	var i, j uint64
-	next := make([]uint64, m.n)
-	entry := make([]int64, m.m)
-	for j = 0; j < m.m; j++ {
-		entry[j] = -1
-	}
-
-	var n uint64
-
-	for { //true
-		for i = 0; i < m.n; i++ {
-			c := m.permutation[i][next[i]]
-			for entry[c] >= 0 {
-				next[i] = next[i] + 1
-				c = m.permutation[i][next[i]]
-			}
-
-			entry[c] = int64(i)
-			next[i] = next[i] + 1
-			n++
-
-			if n == m.m {
-				m.lookup = entry
-				return
-			}
-		}
-
-	}
-
 }
